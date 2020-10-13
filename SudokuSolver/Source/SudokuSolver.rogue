@@ -1,0 +1,253 @@
+#===============================================================================
+# SudokuSolver.rogue
+# October 12, 2020
+#===============================================================================
+$requireRogue "1.7.7"
+
+SudokuSolver()
+
+class SudokuSolver
+  METHODS
+    method init
+      local board =
+        Board(
+          [
+            [3,0,0,8,0,1,0,0,2],
+            [2,0,1,0,3,0,6,0,4],
+            [0,0,0,2,0,4,0,0,0],
+            [8,0,9,0,0,0,1,0,6],
+            [0,6,0,0,0,0,0,5,0],
+            [7,0,2,0,0,0,4,0,9],
+            [0,0,0,5,0,9,0,0,0],
+            [9,0,4,0,8,0,7,0,5],
+            [6,0,0,1,0,7,0,0,3]
+          ]
+        )
+
+      Console.clear
+      Console.set_cursor(1,1)
+      board.display
+
+      if (not board.is_solved)
+        loop
+          System.sleep(0.5)
+          if (not board.infer_values) escapeLoop
+          Console.clear
+          Console.set_cursor(1,1)
+          board.display
+        endLoop
+      endIf
+
+      Console.clear
+      Console.set_cursor(1,1)
+      board.highlight = null
+      board.display
+endClass
+
+class NumberSet( flags=0:Int32 ) [compound]
+  METHODS
+    method count->Int32
+      block flags, n=0
+        while (flags)
+          if (flags & 1) ++n
+          flags = flags :>>: 1
+        endWhile
+        return n
+      endBlock
+
+    method get( i:Int32 )->Int32
+      local f = flags
+      forEach (n in 1..9)
+        f = f :>>: 1
+        if (f & 1)
+          --i
+          if (i < 0) return n
+        endIf
+      endForEach
+      return 0
+
+    method operator+( n:Int32 )->NumberSet
+      if (n == 0) return this
+      local flag = 1 :<<: n
+      require not (flags & flag)
+      return NumberSet( flags | flag )
+
+    method operator-( n:Int32 )->NumberSet
+      if (n == 0) return this
+      local flag = 1 :<<: n
+      return NumberSet( flags & !flag )
+endClass
+
+class Cell
+  PROPERTIES
+    board      : Board
+    i          : Int32
+    j          : Int32
+    value      : Int32
+    value_candidates = NumberSet( 0b111_111_111_0 )
+
+  METHODS
+    method init( board, i, j )
+      board.columns[i].cells.add( this )
+      board.rows[j].cells.add( this )
+      board.square(i,j).cells.add( this )
+
+    method display
+      if (value)
+        if (board.highlight is this)
+          ConsoleStyle.print( ConsoleStyle.INVERSE )
+          print value
+          ConsoleStyle.print( ConsoleStyle.INVERSE_OFF )
+        else
+          print value
+        endIf
+      else
+        print ' '
+      endIf
+
+    method set_value( @value )
+      if (not value) return
+      board.columns[i].eliminate( value )
+      board.rows[j].eliminate( value )
+      board.square(i,j).eliminate( value )
+      value_candidates = NumberSet(0)
+      board.highlight = this
+
+    method to->String
+      return value->String
+
+endClass
+
+class CellGroup
+  PROPERTIES
+    board      : Board
+    cells      = Cell[]
+
+  METHODS
+    method init( board )
+      board.groups.add( this )
+
+    method eliminate( value:Int32 )
+      forEach (cell in cells)
+        cell.value_candidates -= value
+      endForEach
+
+    method is_valid->Logical
+      try
+        local set = NumberSet()
+        set = set + (forEach in cells).value
+        return true
+      catch (Error)
+        return false
+      endTry
+endClass
+
+class Row : CellGroup
+  PROPERTIES
+    i : Int32
+
+  METHODS
+    method init( board, i )
+      prior.init( board )
+endClass
+
+class Column : CellGroup
+  PROPERTIES
+    j : Int32
+
+  METHODS
+    method init( board, j )
+      prior.init( board )
+endClass
+
+class Square : CellGroup
+  PROPERTIES
+    i : Int32
+    j : Int32
+
+  METHODS
+    method init( board, i, j )
+      prior.init( board )
+endClass
+
+class Board
+  PROPERTIES
+    cells   = Cell[]
+    rows    = Row[]
+    columns = Column[]
+    squares = Square[]
+    groups  = CellGroup[]
+
+    highlight : Cell
+
+  METHODS
+    method init
+      columns.add( Column(this,forEach in 0..8) )
+      rows.add( Row(this,forEach in 0..8) )
+
+      forEach (j in 0..2)
+        forEach (i in 0..2)
+          squares.add( Square(this,i,j) )
+        endForEach
+      endForEach
+
+      forEach (j in 0..8)
+        forEach (i in 0..8)
+          cells.add( Cell(this,i,j) )
+        endForEach
+      endForEach
+
+    method init( numbers:Int32[][] )
+      this.init
+      forEach (j in 0..8)
+        forEach (i in 0..8)
+          cell(i,j).value = numbers[j][i]
+        endForEach
+      endForEach
+      highlight = null
+
+    method cell( i:Int32, j:Int32 )->Cell
+      if (i < 0 or i > 8 or j < 0 or j > 8) return null
+      return cells[ j*9 + i ]
+
+    method display
+      forEach (j in 0..8)
+        if (j == 3 or j == 6) println "---+---+---"
+        forEach (i in 0..8)
+          if (i == 3 or i == 6) print '|'
+          cell(i,j).display
+        endForEach
+        println
+      endForEach
+      println
+
+    method infer_values->Logical
+      forEach (cell in cells)
+        if (cell.value_candidates.count == 1)
+          cell.value = cell.value_candidates[0]
+          return true
+        endIf
+      endForEach
+
+      return false
+
+    method is_solved->Logical
+      if ((forEach in cells).value == 0) return false
+      return true
+
+    method is_valid->Logical
+      if (not (forEach in groups).is_valid) return false
+      return true
+
+    method square( i:Int32, j:Int32 )->Square
+      i /= 3
+      j /= 3
+      if (i < 0 or i > 2 or j < 0 or j > 2) return null
+      return squares[ j*3 + i ]
+
+    method unsolved_count->Int32
+      local count = 0
+      if ((forEach in cells).value == 0) ++count
+      return count
+endClass
+
