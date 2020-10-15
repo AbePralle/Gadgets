@@ -4,11 +4,19 @@
 #===============================================================================
 $requireRogue "1.7.7"
 
+uses Geometry
+uses Utility/TextCanvas
+
 SudokuSolver()
 
 class SudokuSolver
+  PROPERTIES
+    view : View
+
   METHODS
     method init
+      #{
+      # Easy
       local board =
         Board(
           [
@@ -23,29 +31,66 @@ class SudokuSolver
             [6,0,0,1,0,7,0,0,3]
           ]
         )
+      }#
+
+      #{ }#
+      # Hard
+      local board =
+        Board(
+          [
+            [0,0,6,0,0,0,8,3,2],
+            [4,0,0,2,6,0,0,0,0],
+            [5,0,0,0,0,1,0,0,0],
+            [0,0,0,0,2,4,0,0,0],
+            [0,3,1,0,5,0,2,7,0],
+            [0,0,0,9,7,0,0,0,0],
+            [0,0,0,4,0,0,0,0,9],
+            [0,0,0,0,8,6,0,0,3],
+            [7,5,4,0,0,0,6,0,0]
+          ]
+        )
+
+      #{
+      # Evil
+      local board =
+        Board(
+          [
+            [0,0,0,0,0,6,5,0,7],
+            [8,0,0,0,0,0,0,3,9],
+            [0,0,0,4,0,0,0,2,0],
+            [0,0,7,0,4,0,0,0,0],
+            [9,0,0,2,7,3,0,0,4],
+            [0,0,0,0,1,0,8,0,0],
+            [0,4,0,0,0,1,0,0,0],
+            [1,2,0,0,0,0,0,0,3],
+            [7,0,6,8,0,0,0,0,0]
+          ]
+        )
+      }#
+
+      view = View( board )
 
       Console.clear
-      Console.set_cursor(1,1)
-      board.display
+      view.display
 
       if (not board.is_solved)
         loop
-          System.sleep(0.5)
-          if (not board.infer_values) escapeLoop
-          Console.clear
-          Console.set_cursor(1,1)
-          board.display
+          System.sleep(0.15)
+          if (not board.advance) escapeLoop
+          view.display
         endLoop
       endIf
 
-      Console.clear
-      Console.set_cursor(1,1)
-      board.highlight = null
-      board.display
+      view.display
 endClass
 
 class NumberSet( flags=0:Int32 ) [compound]
   METHODS
+    method contains( n:Int32 )->Logical
+      if (n == 0) return (count < 9)
+      local flag = 1 :<<: n
+      return (flags & flag)
+
     method count->Int32
       block flags, n=0
         while (flags)
@@ -133,13 +178,17 @@ class CellGroup
       endForEach
 
     method is_valid->Logical
-      try
-        local set = NumberSet()
-        set = set + (forEach in cells).value
-        return true
-      catch (Error)
-        return false
-      endTry
+      local set = NumberSet()
+      forEach (cell in cells)
+        if (cell.value)
+          if (set.contains(cell.value)) return false
+          set += cell.value
+        elseIf (cell.value_candidates.count == 0)
+          # No value and no value candidates
+          return false
+        endIf
+      endForEach
+      return true
 endClass
 
 class Row : CellGroup
@@ -180,6 +229,8 @@ class Board
 
     highlight : Cell
 
+    saved_state = Byte[]
+
   METHODS
     method init
       columns.add( Column(this,forEach in 0..8) )
@@ -206,6 +257,10 @@ class Board
       endForEach
       highlight = null
 
+    method advance->Logical
+      if (find_cell_with_single_value_candidate) return true
+      return (iterate_over_fewest_value_candidates)
+
     method cell( i:Int32, j:Int32 )->Cell
       if (i < 0 or i > 8 or j < 0 or j > 8) return null
       return cells[ j*9 + i ]
@@ -221,7 +276,7 @@ class Board
       endForEach
       println
 
-    method infer_values->Logical
+    method find_cell_with_single_value_candidate->Logical
       forEach (cell in cells)
         if (cell.value_candidates.count == 1)
           cell.value = cell.value_candidates[0]
@@ -239,6 +294,46 @@ class Board
       if (not (forEach in groups).is_valid) return false
       return true
 
+    method iterate_over_fewest_value_candidates->Logical
+      local cells = cells.cloned
+      cells.keep( (cell) => (cell.value==0) )
+      cells.sort( (a,b) => a.value_candidates.count <= b.value_candidates.count )
+      forEach (cell in cells)
+        if (not cell.value)
+          forEach (value in cell.value_candidates)
+            save_state
+            cell.value = value
+            if (solve)
+              restore_state
+              cell.value = value
+              return true
+            endIf
+            restore_state
+          endForEach
+        endIf
+      endForEach
+      return false
+
+    method restore_state
+      (forEach in cells).value_candidates = NumberSet( 0b111_111_111_0 )
+      forEach (cell at i in cells step -1)
+        cell.value = saved_state.remove_last
+      endForEach
+      highlight = null
+
+    method save_state
+      saved_state.reserve( 81 )
+      saved_state.add( (forEach in cells).value )
+
+    method solve->Logical
+      loop
+        if (not is_valid) return false
+        if (is_solved) return true
+        if (find_cell_with_single_value_candidate) nextIteration
+        if (iterate_over_fewest_value_candidates) nextIteration
+        return false
+      endLoop
+
     method square( i:Int32, j:Int32 )->Square
       i /= 3
       j /= 3
@@ -251,3 +346,72 @@ class Board
       return count
 endClass
 
+
+class View : TextCanvas
+  PROPERTIES
+    board          : Board
+    grid           : TextCanvas
+
+  METHODS
+    method init( board )
+      prior.init( 37, 37, 0 )
+
+      grid = TextCanvas( 37, 37, 0 )
+      grid.draw( Box(0,0,37,37), "+-+| |+-+" )
+      forEach (j in 0..8)
+        forEach (i in 0..8)
+          grid.draw( Box(i*4,j*4,5,5), "+-+| |+-+" )
+        endForEach
+      endForEach
+
+      draw( Box(3*4,0,1,37), "|" )
+      draw( Box(6*4,0,1,37), "|" )
+      draw( Box(0,3*4,37,1), "-" )
+      draw( Box(0,6*4,37,1), "-" )
+      draw( Box(3*4,3*4,13,13), "+-+| |+-+" )
+
+    method display
+      forEach (j in 0..8)
+        forEach (i in 0..8)
+          local cell = board.cell(i,j)
+          local x = i*4 + 1
+          local y = j*4 + 1
+          if (cell.value)
+            fill( Box(x,y,3,3), ' ' )
+            set( x+1, y+1, Character('0'+cell.value) )
+          else
+            forEach (jj in 0..2)
+              forEach (ii in 0..2)
+                local n = jj*3 + ii + 1
+                if (cell.value_candidates.contains(n))
+                  grid.set( x+ii, y+jj, Character('0'+n) )
+                else
+                  grid.set( x+ii, y+jj, ' ' )
+                endIf
+              endForEach
+            endForEach
+          endIf
+        endForEach
+      endForEach
+
+      ConsoleStyle.print_dim; Global.flush
+      grid.display(1,1)
+      ConsoleStyle.print_dim_off; Global.flush
+
+      display(1,1)
+
+      #{
+      if (board.highlight)
+        local bounds = Box( board.highlight.i*4+1, board.highlight.j*4+1, 3, 3 )
+        invalidate( bounds )
+        ConsoleStyle.print_inverse; Console.flush
+        fill( bounds, '.' )
+        display(1,1)
+        Console.flush
+        ConsoleStyle.print_inverse_off; Console.flush
+        invalidate( bounds )
+      endIf
+      }#
+
+      Console.set_cursor( 1, height+2 )
+endClass

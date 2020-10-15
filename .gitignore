@@ -1,0 +1,10 @@
+# Nested repos
+/Days
+/LSTree
+/ReID
+
+*.swp
+*.swo
+Build
+.rogo
+.DS_Store
