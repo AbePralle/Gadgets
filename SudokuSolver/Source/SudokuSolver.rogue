@@ -33,7 +33,6 @@ class SudokuSolver
         )
       }#
 
-      #{ }#
       # Hard
       local board =
         Board(
@@ -298,7 +297,7 @@ class Board
       local cells = cells.cloned
       cells.keep( (cell) => (cell.value==0) )
       cells.sort( (a,b) => a.value_candidates.count <= b.value_candidates.count )
-      forEach (cell in cells)
+      forEach (cell at index in cells)
         if (not cell.value)
           forEach (value in cell.value_candidates)
             save_state
@@ -308,6 +307,7 @@ class Board
               cell.value = value
               return true
             endIf
+            if (is_solved) throw Error("WTF")
             restore_state
           endForEach
         endIf
@@ -350,19 +350,19 @@ endClass
 class View : TextCanvas
   PROPERTIES
     board          : Board
-    grid           : TextCanvas
 
   METHODS
     method init( board )
       prior.init( 37, 37, 0 )
 
-      grid = TextCanvas( 37, 37, 0 )
-      grid.draw( Box(0,0,37,37), "+-+| |+-+" )
+      style.[clear,dim]
+      draw( Box(0,0,37,37), "+-+| |+-+" )
       forEach (j in 0..8)
         forEach (i in 0..8)
-          grid.draw( Box(i*4,j*4,5,5), "+-+| |+-+" )
+          draw( Box(i*4,j*4,5,5), "+-+| |+-+" )
         endForEach
       endForEach
+      style.clear
 
       draw( Box(3*4,0,1,37), "|" )
       draw( Box(6*4,0,1,37), "|" )
@@ -377,38 +377,32 @@ class View : TextCanvas
           local x = i*4 + 1
           local y = j*4 + 1
           if (cell.value)
+            if (cell is board.highlight) style.[ bg_white, fg_blue ]
             fill( Box(x,y,3,3), ' ' )
             set( x+1, y+1, Character('0'+cell.value) )
+            style.[ bg_default, fg_default ]
           else
+            style.dim
             forEach (jj in 0..2)
               forEach (ii in 0..2)
                 local n = jj*3 + ii + 1
                 if (cell.value_candidates.contains(n))
-                  grid.set( x+ii, y+jj, Character('0'+n) )
+                  set( x+ii, y+jj, Character('0'+n) )
                 else
-                  grid.set( x+ii, y+jj, ' ' )
+                  set( x+ii, y+jj, ' ' )
                 endIf
               endForEach
             endForEach
+            style.dim_off
           endIf
         endForEach
       endForEach
-
-      ConsoleStyle.print_dim; Global.flush
-      grid.display(1,1)
-      ConsoleStyle.print_dim_off; Global.flush
 
       display(1,1)
 
       #{
       if (board.highlight)
         local bounds = Box( board.highlight.i*4+1, board.highlight.j*4+1, 3, 3 )
-        invalidate( bounds )
-        ConsoleStyle.print_inverse; Console.flush
-        fill( bounds, '.' )
-        display(1,1)
-        Console.flush
-        ConsoleStyle.print_inverse_off; Console.flush
         invalidate( bounds )
       endIf
       }#
