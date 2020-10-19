@@ -29,6 +29,7 @@ class SudokuSolver
         )
       }#
 
+      #{
       # Hard
       local board =
         Board(
@@ -44,8 +45,8 @@ class SudokuSolver
             [7,5,4,0,0,0,6,0,0]
           ]
         )
+      }#
 
-      #{
       # Evil
       local board =
         Board(
@@ -61,7 +62,6 @@ class SudokuSolver
             [7,0,6,8,0,0,0,0,0]
           ]
         )
-      }#
 
       Console.hide_cursor
       on_exit( ()=>Console.show_cursor; Console.reset )
@@ -71,12 +71,13 @@ class SudokuSolver
       local ui = ConsoleUIView()
       local sudoku_view = SudokuView( board )
       local ui_sudoku_view = ConsoleUITextBox(sudoku_view)
-      local ui_debug_log = ConsoleUIFrame(UIMoveLog())
-      ui.add( (ui_sudoku_view/UIFiller.v) + UISpacer.h(1) + (UICreditsBox() / ui_debug_log) )
-      ui.update_layout
+      local ui_move_log = ConsoleUIFrame(MoveLog)
+      ui.add( (ui_sudoku_view/UIFiller.v) + UISpacer.h(1) + (UICreditsBox() / ui_move_log) )
 
+      ui.update_layout
       sudoku_view.redraw
       ui.draw
+
       if (not board.is_solved)
         loop
           System.sleep(0.25)
@@ -90,51 +91,29 @@ class SudokuSolver
       board.highlight = null
       sudoku_view.redraw
       ui.draw( &force )
+
+      Console.set_cursor( 1, Console.height )
+      Console.clear_to_eol
 endClass
 
-class MoveLog : BufferedPrintWriter<<builder>> [singleton]
-  PROPERTIES
-    log = String[]
-
+class MoveLog : ConsoleUIList, BufferedPrintWriter<<builder>> [singleton]
   METHODS
+    #{
     method count->Int32
       return log.count
 
     method get( index:Int32 )->String
       return log[ index ]
+      }#
 
     method flush( buffer:StringBuilder )
       local line = buffer->String
       if (line.contains('\n'))
-        log.add( forEach in LineReader(line) )
+        add( forEach in LineReader(line) )
       else
-        log.add( line )
+        add( line )
       endIf
       buffer.clear
-endClass
-
-class UIMoveLog : ConsoleUITextBox
-  PROPERTIES
-    last_log_count : Int32
-
-  METHODS
-    method init
-      prior.init
-      canvas.autoscroll = true
-
-    method on_resize
-      redraw
-
-    method on_update
-      if (last_log_count != MoveLog.count) redraw
-      prior.on_update
-
-    method redraw
-      local i1 = (MoveLog.count - canvas.height).clamped_low( 0 )
-      canvas.clear
-      canvas.cursor = XY( 0, 0 )
-      canvas.println( forEach in MoveLog from i1 )
-      last_log_count = MoveLog.count
 endClass
 
 class UICreditsBox : ConsoleUITextBox
@@ -208,6 +187,27 @@ class Cell
       board.rows[j].cells.add( this )
       board.square(i,j).cells.add( this )
 
+    method attempt_all_value_candidates( group:CellGroup )->Int32
+      forEach (n in value_candidates)
+        board.save_state
+        value = n
+
+        local next_cell = group.first_empty_cell
+        if (next_cell)
+          if (next_cell.attempt_all_value_candidates(group))
+            board.restore_state
+            return n
+          endIf
+        else
+          if (board.solve)
+            board.restore_state
+            return n
+          endIf
+        endIf
+        board.restore_state
+      endForEach
+      return 0
+
     method display
       if (value)
         if (board.highlight is this)
@@ -244,10 +244,28 @@ class CellGroup
     method init( board )
       board.groups.add( this )
 
+    method count_candidates_matching( value:Int32 )->Int32
+      local result = 0
+      forEach (cell in cells)
+        if (cell.value_candidates.contains(value)) ++result
+      endForEach
+      return result
+
     method eliminate( value:Int32 )
       forEach (cell in cells)
         cell.value_candidates -= value
       endForEach
+
+    method empty_count->Int32
+      local result = 0
+      if ((forEach in cells).value == 0) ++result
+      return result
+
+    method first_empty_cell->Cell
+      forEach (cell in cells)
+        if (cell.value == 0) return cell
+      endForEach
+      return null
 
     method is_valid->Logical
       local set = NumberSet()
@@ -303,6 +321,10 @@ class Board
 
     saved_state = Byte[]
 
+    solution    : Int32[]
+    # A solve'd board will fill in this solution so that we don't repeat a depth-first
+    # search more than once.
+
   METHODS
     method init
       columns.add( Column(this,forEach in 0..8) )
@@ -333,6 +355,52 @@ class Board
       if (i < 0 or i > 8 or j < 0 or j > 8) return null
       return cells[ j*9 + i ]
 
+    method depth_first_search->Logical
+      if (solution)
+        # Just pick a cell from the previously discovered solution that we don't have yet
+        forEach (cell at i in cells)
+          if (cell.value == 0)
+            cell.value = solution[i]
+            return true
+          endIf
+        endForEach
+      endIf
+
+      groups.sort( (a,b) => a.empty_count < b.empty_count )
+      forEach (group in groups)
+        local cell = group.first_empty_cell
+        if (cell)
+          local success_value = cell.attempt_all_value_candidates( group )
+          if (success_value)
+            cell.value = success_value
+            return true
+          endIf
+        endIf
+      endForEach
+      return false
+
+      #{
+      local cells = cells.cloned
+      cells.keep( (cell) => (cell.value==0) )
+      cells.sort( (a,b) => a.value_candidates.count <= b.value_candidates.count )
+      forEach (cell at index in cells)
+        if (not cell.value)
+          forEach (value in cell.value_candidates)
+            save_state
+            cell.value = value
+            if (solve)
+              restore_state
+              cell.value = value
+              return true
+            endIf
+            if (is_solved) throw Error("WTF")
+            restore_state
+          endForEach
+        endIf
+      endForEach
+      return false
+      }#
+
     method display
       forEach (j in 0..8)
         if (j == 3 or j == 6) println "---+---+---"
@@ -354,6 +422,24 @@ class Board
 
       return false
 
+    method find_cell_with_unique_value_candidate->Logical
+      if (find_cell_with_unique_value_candidate(forEach in groups)) return true
+      return false
+
+    method find_cell_with_unique_value_candidate( group:CellGroup )->Logical
+      forEach (n in 1..9)
+        if (group.count_candidates_matching(n) == 1)
+          forEach (cell in group.cells)
+            if (cell.value_candidates.contains(n))
+              cell.value = n
+              return true
+            endIf
+          endForEach
+        endIf
+      endForEach
+
+      return false
+
     method is_solved->Logical
       if ((forEach in cells).value == 0) return false
       return true
@@ -361,27 +447,6 @@ class Board
     method is_valid->Logical
       if (not (forEach in groups).is_valid) return false
       return true
-
-    method iterate_over_fewest_value_candidates->Logical
-      local cells = cells.cloned
-      cells.keep( (cell) => (cell.value==0) )
-      cells.sort( (a,b) => a.value_candidates.count <= b.value_candidates.count )
-      forEach (cell at index in cells)
-        if (not cell.value)
-          forEach (value in cell.value_candidates)
-            save_state
-            cell.value = value
-            if (solve)
-              restore_state
-              cell.value = value
-              return true
-            endIf
-            if (is_solved) throw Error("WTF")
-            restore_state
-          endForEach
-        endIf
-      endForEach
-      return false
 
     method restore_state
       (forEach in cells).value_candidates = NumberSet( 0b111_111_111_0 )
@@ -397,18 +462,26 @@ class Board
     method solve->Logical
       loop
         if (not is_valid) return false
-        if (is_solved) return true
+        if (is_solved)
+          solution = Int32[](81)
+          forEach (cell in cells) solution.add( cell.value )
+          return true
+        endIf
         if (find_cell_with_single_value_candidate) nextIteration
-        if (iterate_over_fewest_value_candidates) nextIteration
+        if (depth_first_search) nextIteration
         return false
       endLoop
 
     method solve_another_cell->Logical
       if (find_cell_with_single_value_candidate)
-        MoveLog.println( "$ (single candidate value)"(highlight) )
+        MoveLog.println( "$ (cell with only one candidate value)"(highlight) )
         return true
       endIf
-      if (iterate_over_fewest_value_candidates)
+      if (find_cell_with_unique_value_candidate)
+        MoveLog.println( "$ (cell with unique candidate value within group)"(highlight) )
+        return true
+      endIf
+      if (depth_first_search)
         MoveLog.println( "$ (depth-first search)"(highlight) )
         return true
       endIf
@@ -420,7 +493,7 @@ class Board
       if (i < 0 or i > 2 or j < 0 or j > 2) return null
       return squares[ j*3 + i ]
 
-    method unsolved_count->Int32
+    method unfilled_count->Int32
       local count = 0
       if ((forEach in cells).value == 0) ++count
       return count
