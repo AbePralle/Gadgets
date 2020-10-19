@@ -4,15 +4,11 @@
 #===============================================================================
 $requireRogue "1.7.7"
 
-uses Geometry
-uses Utility/TextCanvas
+uses Utility/ConsoleUI
 
 SudokuSolver()
 
 class SudokuSolver
-  PROPERTIES
-    view : View
-
   METHODS
     method init
       #{
@@ -67,20 +63,96 @@ class SudokuSolver
         )
       }#
 
-      view = View( board )
-
+      Console.hide_cursor
+      on_exit( ()=>Console.show_cursor; Console.reset )
       Console.clear
-      view.display
 
+
+      local ui = ConsoleUIView()
+      local sudoku_view = SudokuView( board )
+      local ui_sudoku_view = ConsoleUITextBox(sudoku_view)
+      local ui_debug_log = ConsoleUIFrame(UIMoveLog())
+      ui.add( (ui_sudoku_view/UIFiller.v) + UISpacer.h(1) + (UICreditsBox() / ui_debug_log) )
+      ui.update_layout
+
+      sudoku_view.redraw
+      ui.draw
       if (not board.is_solved)
         loop
-          System.sleep(0.15)
-          if (not board.advance) escapeLoop
-          view.display
+          System.sleep(0.25)
+          if (not board.solve_another_cell) escapeLoop
+          sudoku_view.redraw
+          ui.update
+          ui.draw( &force )
         endLoop
       endIf
 
-      view.display
+      board.highlight = null
+      sudoku_view.redraw
+      ui.draw( &force )
+endClass
+
+class MoveLog : BufferedPrintWriter<<builder>> [singleton]
+  PROPERTIES
+    log = String[]
+
+  METHODS
+    method count->Int32
+      return log.count
+
+    method get( index:Int32 )->String
+      return log[ index ]
+
+    method flush( buffer:StringBuilder )
+      local line = buffer->String
+      if (line.contains('\n'))
+        log.add( forEach in LineReader(line) )
+      else
+        log.add( line )
+      endIf
+      buffer.clear
+endClass
+
+class UIMoveLog : ConsoleUITextBox
+  PROPERTIES
+    last_log_count : Int32
+
+  METHODS
+    method init
+      prior.init
+      canvas.autoscroll = true
+
+    method on_resize
+      redraw
+
+    method on_update
+      if (last_log_count != MoveLog.count) redraw
+      prior.on_update
+
+    method redraw
+      local i1 = (MoveLog.count - canvas.height).clamped_low( 0 )
+      canvas.clear
+      canvas.cursor = XY( 0, 0 )
+      canvas.println( forEach in MoveLog from i1 )
+      last_log_count = MoveLog.count
+endClass
+
+class UICreditsBox : ConsoleUITextBox
+  METHODS
+    method init
+      prior.init( 0, 4 )
+
+    method on_draw
+      canvas.clear
+      canvas.cursor = XY(0,1)
+      print_center( "Sudoku Solver" )
+      print_center( "October 18, 2020 by Abe Pralle" )
+      canvas.draw( "+-+| |+-+" )
+      prior.on_draw
+
+    method print_center( message:String )
+      canvas.cursor = XY( (canvas.width - message.count)/2, canvas.cursor.y )
+      canvas.println( message )
 endClass
 
 class NumberSet( flags=0:Int32 ) [compound]
@@ -158,7 +230,8 @@ class Cell
       board.highlight = this
 
     method to->String
-      return value->String
+      if (value) return "$$ -> $" ("ABCDEFGHI"[i],j+1,value)
+      else       return "$$ (0)" ("ABCDEFGHI"[i],j+1)
 
 endClass
 
@@ -256,10 +329,6 @@ class Board
       endForEach
       highlight = null
 
-    method advance->Logical
-      if (find_cell_with_single_value_candidate) return true
-      return (iterate_over_fewest_value_candidates)
-
     method cell( i:Int32, j:Int32 )->Cell
       if (i < 0 or i > 8 or j < 0 or j > 8) return null
       return cells[ j*9 + i ]
@@ -334,6 +403,17 @@ class Board
         return false
       endLoop
 
+    method solve_another_cell->Logical
+      if (find_cell_with_single_value_candidate)
+        MoveLog.println( "$ (single candidate value)"(highlight) )
+        return true
+      endIf
+      if (iterate_over_fewest_value_candidates)
+        MoveLog.println( "$ (depth-first search)"(highlight) )
+        return true
+      endIf
+      return false
+
     method square( i:Int32, j:Int32 )->Square
       i /= 3
       j /= 3
@@ -347,7 +427,7 @@ class Board
 endClass
 
 
-class View : TextCanvas
+class SudokuView : TextCanvas
   PROPERTIES
     board          : Board
 
@@ -370,19 +450,20 @@ class View : TextCanvas
       draw( Box(0,6*4,37,1), "-" )
       draw( Box(3*4,3*4,13,13), "+-+| |+-+" )
 
-    method display
+    method redraw
       forEach (j in 0..8)
         forEach (i in 0..8)
           local cell = board.cell(i,j)
           local x = i*4 + 1
           local y = j*4 + 1
           if (cell.value)
-            if (cell is board.highlight) style.[ bg_white, fg_blue ]
+            if (cell is board.highlight) style.inverse
             fill( Box(x,y,3,3), ' ' )
             set( x+1, y+1, Character('0'+cell.value) )
-            style.[ bg_default, fg_default ]
+            style.inverse_off
           else
             style.dim
+            Console.flush
             forEach (jj in 0..2)
               forEach (ii in 0..2)
                 local n = jj*3 + ii + 1
@@ -397,15 +478,4 @@ class View : TextCanvas
           endIf
         endForEach
       endForEach
-
-      display(1,1)
-
-      #{
-      if (board.highlight)
-        local bounds = Box( board.highlight.i*4+1, board.highlight.j*4+1, 3, 3 )
-        invalidate( bounds )
-      endIf
-      }#
-
-      Console.set_cursor( 1, height+2 )
 endClass
