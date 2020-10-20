@@ -194,9 +194,11 @@ class Cell
 
         local next_cell = group.first_empty_cell
         if (next_cell)
-          if (next_cell.attempt_all_value_candidates(group))
-            board.restore_state
-            return n
+          if (next_cell.value_candidates.count > 0)
+            if (next_cell.attempt_all_value_candidates(group))
+              board.restore_state
+              return n
+            endIf
           endIf
         else
           if (board.solve)
