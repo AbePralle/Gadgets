@@ -62,6 +62,20 @@ class SudokuSolver
             [7,0,6,8,0,0,0,0,0]
           ]
         )
+      #{
+      local board =
+        Board(
+          " 6    9  "...
+          "   2 1   "...
+          "5 4   17 "...
+          " 51 26 9 "...
+          "         "...
+          " 2 71 64 "...
+          " 95   8 3"...
+          "   5 7   "...
+          "  8    1 "
+        )
+      }#
 
       Console.hide_cursor
       on_exit( ()=>Console.show_cursor; Console.reset )
@@ -171,6 +185,14 @@ class NumberSet( flags=0:Int32 ) [compound]
       if (n == 0) return this
       local flag = 1 :<<: n
       return NumberSet( flags & !flag )
+
+    method to->String
+      local result = ""
+      forEach (n in this)
+        if (result.count) result += ", "
+        result += n
+      endForEach
+      return result
 endClass
 
 class Cell
@@ -353,6 +375,16 @@ class Board
       endForEach
       highlight = null
 
+    method init( numbers:String )
+      this.init
+      numbers = numbers.replacing( "\n", "" ).replacing( ' ', '0' )
+      println "($)" (numbers)
+      trace numbers.count, cells.count
+      forEach (ch at index in numbers)
+        cells[index].value = ch.to_number
+      endForEach
+      highlight = null
+
     method cell( i:Int32, j:Int32 )->Cell
       if (i < 0 or i > 8 or j < 0 or j > 8) return null
       return cells[ j*9 + i ]
@@ -381,28 +413,6 @@ class Board
       endForEach
       return false
 
-      #{
-      local cells = cells.cloned
-      cells.keep( (cell) => (cell.value==0) )
-      cells.sort( (a,b) => a.value_candidates.count <= b.value_candidates.count )
-      forEach (cell at index in cells)
-        if (not cell.value)
-          forEach (value in cell.value_candidates)
-            save_state
-            cell.value = value
-            if (solve)
-              restore_state
-              cell.value = value
-              return true
-            endIf
-            if (is_solved) throw Error("WTF")
-            restore_state
-          endForEach
-        endIf
-      endForEach
-      return false
-      }#
-
     method display
       forEach (j in 0..8)
         if (j == 3 or j == 6) println "---+---+---"
@@ -413,6 +423,37 @@ class Board
         println
       endForEach
       println
+
+    method eliminate_candidates_outside_codependent_cells->Logical
+      forEach (group in groups)
+        forEach (cell at i in group.cells)
+          if (not cell.value)
+            local n = 0
+            local vc = cell.value_candidates
+            forEach (other_cell at j in group.cells)
+              if (other_cell.value == 0 and other_cell.value_candidates == vc) ++n
+            endForEach
+            if (n == cell.value_candidates.count)
+              # N cells have N matching value candidates - can eliminate those value candidates from
+              # other cells in the group
+              highlight = cell
+              local found_any = false
+              forEach (other_cell in group.cells)
+                if (other_cell.value_candidates != vc)
+                  forEach (v in cell.value_candidates)
+                    if (other_cell.value_candidates.contains(v))
+                      found_any = true
+                      other_cell.value_candidates -= v
+                    endIf
+                  endForEach
+                endIf
+              endForEach
+              if (found_any) return true
+            endIf
+          endIf
+        endForEach
+      endForEach
+      return false
 
     method find_cell_with_single_value_candidate->Logical
       forEach (cell in cells)
@@ -481,6 +522,12 @@ class Board
       endIf
       if (find_cell_with_unique_value_candidate)
         MoveLog.println( "$ (cell with unique candidate value within group)"(highlight) )
+        return true
+      endIf
+      if (eliminate_candidates_outside_codependent_cells)
+        local n = highlight.value_candidates.count
+        local values = highlight.value_candidates->String
+        MoveLog.println( "$ group cells have the same value candidates $; eliminating from other group cells"(n,values) )
         return true
       endIf
       if (depth_first_search)
