@@ -48,6 +48,7 @@ class SudokuSolver
       }#
 
       # Evil
+      #{
       local board =
         Board(
           [
@@ -62,6 +63,7 @@ class SudokuSolver
             [7,0,6,8,0,0,0,0,0]
           ]
         )
+        }#
       #{
       local board =
         Board(
@@ -77,8 +79,21 @@ class SudokuSolver
         )
       }#
 
-      Console.hide_cursor
-      on_exit( ()=>Console.show_cursor; Console.reset )
+      local board =
+        Board(
+          "8  7  4  "...
+          "6   3   7"...
+          "5  1   9 "...
+          "  84  96 "...
+          "9 6     4"...
+          " 24  83  "...
+          " 6   5  2"...
+          "485 1   9"...
+          "2 1  7  8"
+        )
+
+      Console.show_cursor = false
+      on_exit( ()=>Console.show_cursor=true; Console.reset )
       Console.clear
 
 
@@ -94,16 +109,20 @@ class SudokuSolver
 
       if (not board.is_solved)
         loop
-          System.sleep(0.25)
+          loop (0.25/(1.0/60.0))
+            ui.update
+            ui.draw( &force )
+            System.sleep( 1.0/60.0 )
+          endLoop
+
           if (not board.solve_another_cell) escapeLoop
           sudoku_view.redraw
-          ui.update
-          ui.draw( &force )
         endLoop
       endIf
 
       board.highlight = null
       sudoku_view.redraw
+      ui.update
       ui.draw( &force )
 
       Console.set_cursor( 1, Console.height )
