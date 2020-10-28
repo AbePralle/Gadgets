@@ -10,6 +10,10 @@
   img_ground_tiles.addEventListener('load', redraw_arena);
   img_ground_tiles.src = "GroundTiles.png";
 
+  let is_drawing = false;
+  let last_draw_index = -1;
+  let selected_tile = 0;
+
   let arena =
   [
     0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -21,6 +25,19 @@
     0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0
+  ];
+
+  let variations =
+  [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
   ];
 
   onMount(
@@ -76,7 +93,7 @@
     if (tile_at(i,j+1))
     {
       // Top Left
-      if (tile_at(i-1,j))
+      if (tile_at(i-1,j) && tile_at(i-1,j+1))
       {
         if (tile_at(i,j-1))
         {
@@ -101,7 +118,7 @@
       }
 
       // Top Right
-      if (tile_at(i+1,j))
+      if (tile_at(i+1,j) && tile_at(i+1,j+1))
       {
         if (tile_at(i,j-1))
         {
@@ -126,7 +143,7 @@
       }
 
       // Bottom Left
-      if (tile_at(i-1,j))
+      if (tile_at(i-1,j) && tile_at(i-1,j+1))
       {
         if (tile_at(i,j+1))
         {
@@ -151,7 +168,7 @@
       }
 
       // Bottom Right
-      if (tile_at(i+1,j))
+      if (tile_at(i+1,j) && tile_at(i+1,j+1))
       {
         if (tile_at(i,j+1))
         {
@@ -178,13 +195,13 @@
     else
     {
       draw_tile( 1, i, j, ctx );
-      if (!tile_at(i,j-1)) draw_tile( 2, i, j-1, ctx );
     }
+    if (!tile_at(i,j-1)) draw_tile( 2, i, j-1, ctx );
   }
 
   function draw_random_solid_wall_top( i, j, ctx )
   {
-    switch ((Math.random()*4)|0)
+    switch (variations[j*18+i])
     {
       case 0: draw_quarter_tile( 1, 1, i, j, ctx ); break;
       case 1: draw_quarter_tile( 2, 1, i, j, ctx ); break;
@@ -227,14 +244,25 @@
     reader.readAsDataURL(files[0]);
   }
 
-  function on_click(e)
+  function on_draw(e)
   {
+    if ( !is_drawing ) return;
     const canvas = document.getElementById("arena_canvas");
     const offset = canvas.getBoundingClientRect();
     let i = ((e.x - offset.left) / 100) | 0;
     let j = ((e.y - offset.top) / 100) | 0;
     let index = j*9 + i;
-    arena[ index ] ^= 1;
+    if (index == last_draw_index) return;
+
+    if (last_draw_index == -1) selected_tile = arena[index] ^ 1;
+    arena[ index ] = selected_tile;
+    last_draw_index = index;
+
+    variations[(j*2)*18+i*2] = (Math.random() * 4) | 0;
+    variations[(j*2+1)*18+i*2] = (Math.random() * 4) | 0;
+    variations[(j*2+1)*18+i*2+1] = (Math.random() * 4) | 0;
+    variations[(j*2)*18+i*2+1] = (Math.random() * 4) | 0;
+
     redraw_arena();
   }
 
@@ -260,8 +288,13 @@
 </Dropzone>
 </p>
 
-<p>
-<canvas id="arena_canvas" width=900 height=900 on:click={e=>on_click(e)}></canvas>
+<p>Click and drag below to add or remove walls.<br>
+  <canvas id="arena_canvas" width=900 height=900
+    on:mousedown={e=>{is_drawing=true;on_draw(e)}}
+    on:mouseup={e=>{is_drawing=false;last_draw_index=-1}}
+    on:mousemove={e=>on_draw(e)}
+  >
+  </canvas>
 </p>
 
 <style>
