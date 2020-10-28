@@ -1,28 +1,51 @@
 <script>
+  import { onMount } from 'svelte';
   import Dropzone from "svelte-file-dropzone";
 
-	let image_data = [];
+  let img_wall_tops = new Image(600,300);
+  img_wall_tops.addEventListener('load', redraw_canvas)
+  img_wall_tops.src = "AxorWallTops.png";
 
-  function handleFilesSelect(e) {
-    const files = e.detail.acceptedFiles;
-    for (let i = 0; i < files.length; i++) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const data = reader.result;
-				//const image = document.createElement('img');
-				//image.src = data;
-        //images.push( image );
-				image_data.push( data );
-				image_data = image_data;
-      };
-      reader.readAsDataURL(files[i]);
+  onMount(
+    () =>
+    {
     }
+  );
+
+  function redraw_canvas()
+  {
+    const canvas = document.getElementById("wall_tops");
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage( img_wall_tops, 0, 0, canvas.width, canvas.height );
+  }
+
+  function handle_file_drop(e)
+  {
+    const files = e.detail.acceptedFiles;
+    if (files.length == 0) return;
+
+    const reader = new FileReader();
+    reader.onload = () => { img_wall_tops.src = reader.result; };
+    reader.readAsDataURL(files[0]);
+  }
+
+  function handle_drag_over(e)
+  {
+      console.log( "DRAG OVER");
+  }
+
+  function on_click()
+  {
+    console.log( "CLICKED!" );
   }
 </script>
 
-<Dropzone on:drop={handleFilesSelect} />
-<ol>
-  {#each image_data as data}
-    <li><img src={data} width=100 alt="YK"></li>
-  {/each}
-</ol>
+<style>
+  :global(.AxorDropzone){ outline:none; width:300px; }
+</style>
+
+<Dropzone on:drop={handle_file_drop} on:dragenter={handle_drag_over} disableDefaultStyles=false noClick=true noKeyboard=true
+  containerClasses="AxorDropzone"
+>
+  <canvas id="wall_tops" width=300 height=150 on:click={e=>on_click(e)}></canvas>
+</Dropzone>
