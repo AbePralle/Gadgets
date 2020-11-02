@@ -93,6 +93,8 @@ class SudokuSolver
           "2 1  7  8"
         )
         }#
+
+        #{
       local board =
         Board(
           "   1   9 "...
@@ -104,6 +106,20 @@ class SudokuSolver
           "9    7   "...
           " 5 3  7  "...
           "      81 "
+        )
+        }#
+
+      local board =
+        Board(
+          "  5    62"...
+          " 63  9   "...
+          "        4"...
+          "     67 3"...
+          "  67 5   "...
+          "1  8     "...
+          "8 12  6  "...
+          "      53 "...
+          " 4    8  "
         )
 
       Console.show_cursor = false
@@ -483,32 +499,33 @@ class Board
       endForEach
       println
 
-    method eliminate_candidates_outside_codependent_cells->Logical
+    method eliminate_outside_n_x_n->Logical
       forEach (group in groups)
         forEach (cell at i in group.cells)
           if (not cell.value)
-            local n = 0
-            local vc = cell.value_candidates
-            forEach (other_cell at j in group.cells)
-              if (other_cell.value == 0 and other_cell.value_candidates == vc) ++n
-            endForEach
-            if (n == cell.value_candidates.count)
-              # N cells have N matching value candidates - can eliminate those value candidates from
-              # other cells in the group
-              highlight = cell
-              local found_any = false
-              forEach (other_cell in group.cells)
-                if (other_cell.value_candidates != vc)
-                  forEach (v in cell.value_candidates)
-                    if (other_cell.value_candidates.contains(v))
+            forEach (v in 1..9)
+              if (cell.value_candidates.contains(v))
+                local n = 0
+                local count = cell.value_candidates.count
+                forEach (other_cell at j in group.cells)
+                  if (other_cell.value == 0 and other_cell.value_candidates.contains(v) and...
+                      other_cell.value_candidates.count == count) ++n
+                endForEach
+                if (n == count)
+                  # N cells that contain V have N value candidates - can eliminate V
+                  # from other cells in the group
+                  highlight = cell
+                  local found_any = false
+                  forEach (other_cell in group.cells)
+                    if (other_cell.value==0 and other_cell.value_candidates.contains(v) and other_cell.value_candidates.count!=count)
                       found_any = true
                       other_cell.value_candidates -= v
                     endIf
                   endForEach
+                  if (found_any) return true
                 endIf
-              endForEach
-              if (found_any) return true
-            endIf
+              endIf
+            endForEach
           endIf
         endForEach
       endForEach
@@ -607,10 +624,8 @@ class Board
         if (log) MoveLog.println( "$ (cell with unique candidate value within group)"(highlight) )
         return true
       endIf
-      if (eliminate_candidates_outside_codependent_cells)
-        local n = highlight.value_candidates.count
-        local values = highlight.value_candidates->String
-        if (log) MoveLog.println( "$ group cells have the same value candidates $; eliminating from other group cells"(n,values) )
+      if (eliminate_outside_n_x_n)
+        if (log) MoveLog.println( "If a number X occurs in N cells with N value candidates each, X can be eliminated from the rest of the group." )
         return true
       endIf
       if (eliminate_candidates_from_b_that_are_exclusive_in_a_to_a_intersect_b)
