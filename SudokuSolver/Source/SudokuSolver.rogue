@@ -79,6 +79,7 @@ class SudokuSolver
         )
       }#
 
+      #{
       local board =
         Board(
           "8  7  4  "...
@@ -90,6 +91,19 @@ class SudokuSolver
           " 6   5  2"...
           "485 1   9"...
           "2 1  7  8"
+        )
+        }#
+      local board =
+        Board(
+          "   1   9 "...
+          "7     126"...
+          "2   4    "...
+          " 4       "...
+          "5 8  29  "...
+          "     82 5"...
+          "9    7   "...
+          " 5 3  7  "...
+          "      81 "
         )
 
       Console.show_cursor = false
@@ -264,6 +278,10 @@ class Cell
         print ' '
       endIf
 
+    method contains_value_candidate( n:Int32 )->Logical
+      if (value) return false
+      return (value_candidates.contains(n))
+
     method set_value( @value )
       if (not value) return
       board.columns[i].eliminate( value )
@@ -294,15 +312,37 @@ class CellGroup
       endForEach
       return result
 
-    method eliminate( value:Int32 )
+    method eliminate( value:Int32, &outside_of:Cell[] )->Logical
+      local eliminated_any = false
       forEach (cell in cells)
-        cell.value_candidates -= value
+        if (not outside_of or not outside_of.contains(cell))
+          if (cell.contains_value_candidate(value))
+            eliminated_any = true
+            cell.value_candidates -= value
+          endIf
+        endIf
       endForEach
+      return eliminated_any
 
     method empty_count->Int32
       local result = 0
       if ((forEach in cells).value == 0) ++result
       return result
+
+    method contains_value_candidate( n:Int32, &outside_of:Cell[] )->Logical
+      forEach (cell in cells)
+        if (not outside_of or not outside_of.contains(cell))
+          if (cell.contains_value_candidate(n)) return true
+        endIf
+      endForEach
+      return false
+
+    method intersect( other:CellGroup, list:Cell[] )->Logical
+      list.clear
+      forEach (cell in cells)
+        if (other.cells.contains(cell)) list.add( cell )
+      endForEach
+      return list.count
 
     method first_empty_cell->Cell
       forEach (cell in cells)
@@ -474,6 +514,31 @@ class Board
       endForEach
       return false
 
+    method eliminate_candidates_from_b_that_are_exclusive_in_a_to_a_intersect_b->Logical
+      local intersection = Cell[]
+      local eliminated_any = false
+      forEach (group in groups)
+        forEach (other_group in groups)
+          if (group is not other_group)
+            if (group.intersect(other_group,intersection))
+              forEach (n in 1..9)
+                contingent
+                  sufficient ((forEach in intersection).contains_value_candidate(n))
+                  escapeContingent
+                satisfied
+                  if (not group.contains_value_candidate(n,&outside_of=intersection))
+                    # Can eliminate 'n' from other cells of 'b'
+                    eliminated_any |= other_group.eliminate( n, &outside_of=intersection )
+                  endIf
+                endContingent
+              endForEach
+            endIf
+            if (eliminated_any) return true
+          endIf
+        endForEach
+      endForEach
+      return eliminated_any
+
     method find_cell_with_single_value_candidate->Logical
       forEach (cell in cells)
         if (cell.value_candidates.count == 1)
@@ -529,28 +594,31 @@ class Board
           forEach (cell in cells) solution.add( cell.value )
           return true
         endIf
-        if (find_cell_with_single_value_candidate) nextIteration
-        if (depth_first_search) nextIteration
+        if (solve_another_cell(&!log)) nextIteration
         return false
       endLoop
 
-    method solve_another_cell->Logical
+    method solve_another_cell( &log=true )->Logical
       if (find_cell_with_single_value_candidate)
-        MoveLog.println( "$ (cell with only one candidate value)"(highlight) )
+        if (log) MoveLog.println( "$ (cell with only one candidate value)"(highlight) )
         return true
       endIf
       if (find_cell_with_unique_value_candidate)
-        MoveLog.println( "$ (cell with unique candidate value within group)"(highlight) )
+        if (log) MoveLog.println( "$ (cell with unique candidate value within group)"(highlight) )
         return true
       endIf
       if (eliminate_candidates_outside_codependent_cells)
         local n = highlight.value_candidates.count
         local values = highlight.value_candidates->String
-        MoveLog.println( "$ group cells have the same value candidates $; eliminating from other group cells"(n,values) )
+        if (log) MoveLog.println( "$ group cells have the same value candidates $; eliminating from other group cells"(n,values) )
+        return true
+      endIf
+      if (eliminate_candidates_from_b_that_are_exclusive_in_a_to_a_intersect_b)
+        if (log) MoveLog.println( "Eliminated value candidates from group B that, within group A, are exclusive to cells of A intersect B" )
         return true
       endIf
       if (depth_first_search)
-        MoveLog.println( "$ (depth-first search)"(highlight) )
+        if (log) MoveLog.println( "$ (depth-first search)"(highlight) )
         return true
       endIf
       return false
