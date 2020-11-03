@@ -94,7 +94,6 @@ class SudokuSolver
         )
         }#
 
-        #{
       local board =
         Board(
           "   1   9 "...
@@ -107,8 +106,8 @@ class SudokuSolver
           " 5 3  7  "...
           "      81 "
         )
-        }#
 
+        #{
       local board =
         Board(
           "  5    62"...
@@ -121,6 +120,7 @@ class SudokuSolver
           "      53 "...
           " 4    8  "
         )
+        }#
 
       Console.show_cursor = false
       on_exit( ()=>Console.show_cursor=true; Console.reset )
@@ -137,6 +137,7 @@ class SudokuSolver
       sudoku_view.redraw
       ui.draw
 
+      local failed = false
       if (not board.is_solved)
         loop
           loop (0.25/(1.0/60.0))
@@ -145,8 +146,12 @@ class SudokuSolver
             System.sleep( 1.0/60.0 )
           endLoop
 
-          if (not board.solve_another_cell) escapeLoop
+          if (not board.solve_another_cell)
+            failed = true
+            escapeLoop
+          endIf
           sudoku_view.redraw
+          if (board.is_solved) escapeLoop
         endLoop
       endIf
 
@@ -157,6 +162,7 @@ class SudokuSolver
 
       Console.set_cursor( 1, Console.height )
       Console.clear_to_eol
+      if (failed) println "Failed to solve board"
 endClass
 
 class MoveLog : ConsoleUIList, BufferedPrintWriter<<builder>> [singleton]
@@ -454,7 +460,6 @@ class Board
       this.init
       numbers = numbers.replacing( "\n", "" ).replacing( ' ', '0' )
       println "($)" (numbers)
-      trace numbers.count, cells.count
       forEach (ch at index in numbers)
         cells[index].value = ch.to_number
       endForEach
@@ -509,15 +514,15 @@ class Board
                 local count = cell.value_candidates.count
                 forEach (other_cell at j in group.cells)
                   if (other_cell.value == 0 and other_cell.value_candidates.contains(v) and...
-                      other_cell.value_candidates.count == count) ++n
+                      other_cell.value_candidates.count <= count) ++n
                 endForEach
                 if (n == count)
-                  # N cells that contain V have N value candidates - can eliminate V
+                  # N cells that contain V have <= N value candidates - can eliminate V
                   # from other cells in the group
                   highlight = cell
                   local found_any = false
                   forEach (other_cell in group.cells)
-                    if (other_cell.value==0 and other_cell.value_candidates.contains(v) and other_cell.value_candidates.count!=count)
+                    if (other_cell.value==0 and other_cell.value_candidates.contains(v) and other_cell.value_candidates.count>count)
                       found_any = true
                       other_cell.value_candidates -= v
                     endIf
@@ -625,7 +630,7 @@ class Board
         return true
       endIf
       if (eliminate_outside_n_x_n)
-        if (log) MoveLog.println( "If a number X occurs in N cells with N value candidates each, X can be eliminated from the rest of the group." )
+        if (log) MoveLog.println( "N cells contain <= N values and also contain V; eliminate V from cells with > N values." )
         return true
       endIf
       if (eliminate_candidates_from_b_that_are_exclusive_in_a_to_a_intersect_b)
